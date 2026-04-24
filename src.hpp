@@ -61,7 +61,7 @@ private:
         return (t > -0.01) ? t : 1e9;
     }
     
-    bool is_safe_velocity(const Vec &velocity, double time_horizon = 0.15) {
+    bool is_safe_velocity(const Vec &velocity, double time_horizon = 0.13) {
         if (velocity.norm() > v_max + 0.01) return false;
         
         int n = monitor->get_robot_number();
@@ -88,20 +88,20 @@ private:
             
             Vec delta_pos = pos_cur - other_pos;
             double dist = delta_pos.norm();
-            double safe_dist = r + other_r + 1.0;
+            double safe_dist = r + other_r + 0.8;
             
             if (dist < safe_dist) {
                 Vec repulsion = delta_pos.normalize() * (safe_dist - dist) / safe_dist;
-                avoidance_v += repulsion * 10.0;
+                avoidance_v += repulsion * 8.0;
             }
             
             Vec relative_v = preferred_v - other_v;
-            Vec future_delta = delta_pos + relative_v * 0.2;
+            Vec future_delta = delta_pos + relative_v * 0.3;
             double future_dist = future_delta.norm();
             
             if (future_dist < safe_dist) {
                 Vec repulsion = future_delta.normalize() * (safe_dist - future_dist) / safe_dist;
-                avoidance_v += repulsion * 5.0;
+                avoidance_v += repulsion * 4.0;
             }
         }
         
@@ -128,7 +128,7 @@ public:
         
         Vec desired_v = to_target.normalize() * std::min(v_max, dist_to_target / 0.1);
         
-        if (is_safe_velocity(desired_v, 0.12)) {
+        if (is_safe_velocity(desired_v, 0.13)) {
             return desired_v;
         }
         
@@ -139,7 +139,7 @@ public:
             adjusted_v = adjusted_v.normalize() * v_max;
         }
         
-        if (is_safe_velocity(adjusted_v, 0.10)) {
+        if (is_safe_velocity(adjusted_v, 0.11)) {
             return adjusted_v;
         }
         
@@ -151,8 +151,8 @@ public:
             double speed = v_max * speed_idx / 6.0;
             Vec test_v = direct_to_target * speed;
             
-            if (is_safe_velocity(test_v, 0.10)) {
-                double score = speed * 2.0 - (1.0 - speed / v_max) * 0.3;
+            if (is_safe_velocity(test_v, 0.11)) {
+                double score = speed * 1.5 - (1.0 - speed / v_max) * 0.4;
                 if (score > best_score) {
                     best_score = score;
                     best_v = test_v;
@@ -160,7 +160,7 @@ public:
             }
         }
         
-        int num_angles = 12;
+        int num_angles = 10;
         for (int angle_idx = 1; angle_idx < num_angles; ++angle_idx) {
             double angle = 2.0 * 3.14159265358979323846 * angle_idx / num_angles;
             double dir_x = cos(angle);
@@ -171,11 +171,11 @@ public:
                 double speed = v_max * speed_idx / 4.0;
                 Vec test_v = direction * speed;
                 
-                if (is_safe_velocity(test_v, 0.10)) {
+                if (is_safe_velocity(test_v, 0.11)) {
                     Vec future_pos = pos_cur + test_v * 0.1;
                     double future_dist = (pos_tar - future_pos).norm();
                     double angle_to_target = to_target.normalize().dot(direction);
-                    double score = -future_dist * 0.8 + speed * 0.3 + angle_to_target * 0.5;
+                    double score = -future_dist * 0.6 + speed * 0.2 + angle_to_target * 0.4;
                     
                     if (score > best_score) {
                         best_score = score;
