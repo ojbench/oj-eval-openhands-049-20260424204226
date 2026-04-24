@@ -2,6 +2,8 @@
 #define PPCA_SRC_HPP
 
 #include "math.h"
+#include <cmath>
+#include <algorithm>
 
 class Controller {
 
@@ -34,7 +36,7 @@ private:
     /// TODO: You can add any [private] member variable or [private] member function you need.
     /////////////////////////////////
     
-    bool will_collide(const Vec &my_velocity, int other_id, double time_step = 0.1) {
+    double time_to_collision(const Vec &my_velocity, int other_id) {
         Vec other_pos = monitor->get_pos_cur(other_id);
         Vec other_v = monitor->get_v_cur(other_id);
         double other_r = monitor->get_r(other_id);
@@ -43,35 +45,67 @@ private:
         Vec delta_v = my_velocity - other_v;
         
         double a = delta_v.norm_sqr();
-        double b = 2.0 * delta_pos.dot(delta_v);
-        double c = delta_pos.norm_sqr() - (r + other_r) * (r + other_r);
-        
-        if (c < 0.01) return true;
-        
         if (a < 1e-9) {
-            return c < 0.01;
+            double dist = delta_pos.norm();
+            double min_dist = r + other_r;
+            return (dist < min_dist + 0.1) ? 0.0 : 1e9;
         }
         
+        double b = 2.0 * delta_pos.dot(delta_v);
+        double c = delta_pos.norm_sqr() - (r + other_r + 0.02) * (r + other_r + 0.02);
+        
         double discriminant = b * b - 4 * a * c;
-        if (discriminant < 0) return false;
+        if (discriminant < 0) return 1e9;
         
-        double t1 = (-b - sqrt(discriminant)) / (2 * a);
-        double t2 = (-b + sqrt(discriminant)) / (2 * a);
-        
-        return (t1 >= -0.01 && t1 <= time_step + 0.01) || (t2 >= -0.01 && t2 <= time_step + 0.01) || (t1 < 0 && t2 > time_step);
+        double t = (-b - sqrt(discriminant)) / (2 * a);
+        return (t > -0.01) ? t : 1e9;
     }
     
-    bool is_safe_velocity(const Vec &velocity) {
+    bool is_safe_velocity(const Vec &velocity, double time_horizon = 0.15) {
         if (velocity.norm() > v_max + 0.01) return false;
         
         int n = monitor->get_robot_number();
         for (int i = 0; i < n; ++i) {
             if (i == id) continue;
-            if (will_collide(velocity, i)) {
+            double ttc = time_to_collision(velocity, i);
+            if (ttc < time_horizon) {
                 return false;
             }
         }
         return true;
+    }
+    
+    Vec avoid_collision_velocity(const Vec &preferred_v) {
+        int n = monitor->get_robot_number();
+        Vec avoidance_v = Vec(0, 0);
+        
+        for (int i = 0; i < n; ++i) {
+            if (i == id) continue;
+            
+            Vec other_pos = monitor->get_pos_cur(i);
+            Vec other_v = monitor->get_v_cur(i);
+            double other_r = monitor->get_r(i);
+            
+            Vec delta_pos = pos_cur - other_pos;
+            double dist = delta_pos.norm();
+            double safe_dist = r + other_r + 1.0;
+            
+            if (dist < safe_dist) {
+                Vec repulsion = delta_pos.normalize() * (safe_dist - dist) / safe_dist;
+                avoidance_v += repulsion * 10.0;
+            }
+            
+            Vec relative_v = preferred_v - other_v;
+            Vec future_delta = delta_pos + relative_v * 0.2;
+            double future_dist = future_delta.norm();
+            
+            if (future_dist < safe_dist) {
+                Vec repulsion = future_delta.normalize() * (safe_dist - future_dist) / safe_dist;
+                avoidance_v += repulsion * 5.0;
+            }
+        }
+        
+        return avoidance_v;
     }
 
 public:
@@ -92,28 +126,33 @@ public:
             return Vec(0, 0);
         }
         
-        Vec desired_v = to_target.normalize() * v_max;
+        Vec desired_v = to_target.normalize() * std::min(v_max, dist_to_target / 0.1);
         
-        if (is_safe_velocity(desired_v)) {
+        if (is_safe_velocity(desired_v, 0.15)) {
             return desired_v;
+        }
+        
+        Vec avoidance = avoid_collision_velocity(desired_v);
+        Vec adjusted_v = desired_v + avoidance;
+        double adjusted_speed = adjusted_v.norm();
+        if (adjusted_speed > v_max) {
+            adjusted_v = adjusted_v.normalize() * v_max;
+        }
+        
+        if (is_safe_velocity(adjusted_v, 0.12)) {
+            return adjusted_v;
         }
         
         double best_score = -1e9;
         Vec best_v = Vec(0, 0);
         
-        int num_angles = 12;
-        int num_speeds = 4;
-        
         Vec direct_to_target = to_target.normalize();
-        for (int speed_idx = 0; speed_idx <= num_speeds; ++speed_idx) {
-            double speed = v_max * speed_idx / num_speeds;
+        for (int speed_idx = 0; speed_idx <= 5; ++speed_idx) {
+            double speed = v_max * speed_idx / 5.0;
             Vec test_v = direct_to_target * speed;
             
-            if (is_safe_velocity(test_v)) {
-                Vec future_pos = pos_cur + test_v * 0.1;
-                double future_dist = (pos_tar - future_pos).norm();
-                double score = -future_dist + speed * 0.5;
-                
+            if (is_safe_velocity(test_v, 0.12)) {
+                double score = speed - (1.0 - speed / v_max) * 0.5;
                 if (score > best_score) {
                     best_score = score;
                     best_v = test_v;
@@ -121,18 +160,19 @@ public:
             }
         }
         
-        for (int angle_idx = 0; angle_idx < num_angles; ++angle_idx) {
+        int num_angles = 8;
+        for (int angle_idx = 1; angle_idx < num_angles; ++angle_idx) {
             double angle = 2.0 * 3.14159265358979323846 * angle_idx / num_angles;
             Vec direction(cos(angle), sin(angle));
             
-            for (int speed_idx = 1; speed_idx <= num_speeds; ++speed_idx) {
-                double speed = v_max * speed_idx / num_speeds;
+            for (int speed_idx = 1; speed_idx <= 3; ++speed_idx) {
+                double speed = v_max * speed_idx / 3.0;
                 Vec test_v = direction * speed;
                 
-                if (is_safe_velocity(test_v)) {
+                if (is_safe_velocity(test_v, 0.12)) {
                     Vec future_pos = pos_cur + test_v * 0.1;
                     double future_dist = (pos_tar - future_pos).norm();
-                    double score = -future_dist + speed * 0.1;
+                    double score = -future_dist * 0.5 + speed * 0.1;
                     
                     if (score > best_score) {
                         best_score = score;
