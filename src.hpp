@@ -128,7 +128,7 @@ public:
         
         Vec desired_v = to_target.normalize() * std::min(v_max, dist_to_target / 0.1);
         
-        if (is_safe_velocity(desired_v, 0.15)) {
+        if (is_safe_velocity(desired_v, 0.12)) {
             return desired_v;
         }
         
@@ -139,7 +139,7 @@ public:
             adjusted_v = adjusted_v.normalize() * v_max;
         }
         
-        if (is_safe_velocity(adjusted_v, 0.12)) {
+        if (is_safe_velocity(adjusted_v, 0.10)) {
             return adjusted_v;
         }
         
@@ -147,12 +147,12 @@ public:
         Vec best_v = Vec(0, 0);
         
         Vec direct_to_target = to_target.normalize();
-        for (int speed_idx = 0; speed_idx <= 5; ++speed_idx) {
-            double speed = v_max * speed_idx / 5.0;
+        for (int speed_idx = 0; speed_idx <= 6; ++speed_idx) {
+            double speed = v_max * speed_idx / 6.0;
             Vec test_v = direct_to_target * speed;
             
-            if (is_safe_velocity(test_v, 0.12)) {
-                double score = speed - (1.0 - speed / v_max) * 0.5;
+            if (is_safe_velocity(test_v, 0.10)) {
+                double score = speed * 2.0 - (1.0 - speed / v_max) * 0.3;
                 if (score > best_score) {
                     best_score = score;
                     best_v = test_v;
@@ -160,19 +160,22 @@ public:
             }
         }
         
-        int num_angles = 8;
+        int num_angles = 12;
         for (int angle_idx = 1; angle_idx < num_angles; ++angle_idx) {
             double angle = 2.0 * 3.14159265358979323846 * angle_idx / num_angles;
-            Vec direction(cos(angle), sin(angle));
+            double dir_x = cos(angle);
+            double dir_y = sin(angle);
+            Vec direction(dir_x, dir_y);
             
-            for (int speed_idx = 1; speed_idx <= 3; ++speed_idx) {
-                double speed = v_max * speed_idx / 3.0;
+            for (int speed_idx = 1; speed_idx <= 4; ++speed_idx) {
+                double speed = v_max * speed_idx / 4.0;
                 Vec test_v = direction * speed;
                 
-                if (is_safe_velocity(test_v, 0.12)) {
+                if (is_safe_velocity(test_v, 0.10)) {
                     Vec future_pos = pos_cur + test_v * 0.1;
                     double future_dist = (pos_tar - future_pos).norm();
-                    double score = -future_dist * 0.5 + speed * 0.1;
+                    double angle_to_target = to_target.normalize().dot(direction);
+                    double score = -future_dist * 0.8 + speed * 0.3 + angle_to_target * 0.5;
                     
                     if (score > best_score) {
                         best_score = score;
