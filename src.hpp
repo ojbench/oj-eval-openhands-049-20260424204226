@@ -101,14 +101,31 @@ public:
         double best_score = -1e9;
         Vec best_v = Vec(0, 0);
         
-        int num_angles = 16;
-        int num_speeds = 5;
+        int num_angles = 12;
+        int num_speeds = 4;
+        
+        Vec direct_to_target = to_target.normalize();
+        for (int speed_idx = 0; speed_idx <= num_speeds; ++speed_idx) {
+            double speed = v_max * speed_idx / num_speeds;
+            Vec test_v = direct_to_target * speed;
+            
+            if (is_safe_velocity(test_v)) {
+                Vec future_pos = pos_cur + test_v * 0.1;
+                double future_dist = (pos_tar - future_pos).norm();
+                double score = -future_dist + speed * 0.5;
+                
+                if (score > best_score) {
+                    best_score = score;
+                    best_v = test_v;
+                }
+            }
+        }
         
         for (int angle_idx = 0; angle_idx < num_angles; ++angle_idx) {
             double angle = 2.0 * 3.14159265358979323846 * angle_idx / num_angles;
             Vec direction(cos(angle), sin(angle));
             
-            for (int speed_idx = 0; speed_idx <= num_speeds; ++speed_idx) {
+            for (int speed_idx = 1; speed_idx <= num_speeds; ++speed_idx) {
                 double speed = v_max * speed_idx / num_speeds;
                 Vec test_v = direction * speed;
                 
@@ -121,23 +138,6 @@ public:
                         best_score = score;
                         best_v = test_v;
                     }
-                }
-            }
-        }
-        
-        Vec direct_to_target = to_target.normalize();
-        for (int speed_idx = 0; speed_idx <= num_speeds; ++speed_idx) {
-            double speed = v_max * speed_idx / num_speeds;
-            Vec test_v = direct_to_target * speed;
-            
-            if (is_safe_velocity(test_v)) {
-                Vec future_pos = pos_cur + test_v * 0.1;
-                double future_dist = (pos_tar - future_pos).norm();
-                double score = -future_dist + speed * 0.1;
-                
-                if (score > best_score) {
-                    best_score = score;
-                    best_v = test_v;
                 }
             }
         }
